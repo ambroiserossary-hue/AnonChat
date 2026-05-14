@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="AnonChat - Messagerie temps réel anonyme inspirée de Discord. Salons, rôles, admin." />
+  <meta name="author" content="AnonChat Team" />
+  <meta name="theme-color" content="#313338" />
+  <title>AnonChat — Messagerie temps réel</title>
+
+  <!-- ================================================================
+       AnonChat — Frontend single-file (HTML + CSS + JS)
+       ----------------------------------------------------------------
+       Tout est inclus volontairement dans index.html :
+         - Permet un déploiement Render zéro configuration statique
+         - Un seul fichier à servir via express.static
+         - CSS détaillé avec animations @keyframes et thème "Discord-like"
+         - Logique JS Client (auth, socket.io, salons, membres, admin)
+       ================================================================ -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ============================================================
+       1. RESET & VARIABLES GLOBALES
+       ============================================================ */
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      /* Palette Discord */
+      --bg-deepest:        #1e1f22;
+      --bg-sidebar:        #2b2d31;
+      --bg-channel:        #313338;
+      --bg-members:        #2b2d31;
+      --bg-input:          #383a40;
+      --bg-hover:          #35373c;
+      --bg-active:         #404249;
+
+      --color-text:        #f2f3f5;
+      --color-text-muted:  #b5bac1;
+      --color-text-dim:    #949ba4;
+      --color-divider:     #1f2023;
+
+      --brand-primary:     #5865f2;
+      --brand-primary-hov: #4752c4;
+      --brand-success:     #23a559;
+      --brand-danger:      #ed4245;
+      --brand-warning:     #f0b232;
+
+      --admin-color:       #ed4245;
+      --admin-glow:        rgba(237, 66, 69, 0.35);
+
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 18px;
+
+      --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.25);
+      --shadow-deep: 0 20px 60px rgba(0, 0, 0, 0.6);
+
+      --transition-fast: 120ms ease;
+      --transition-med:  220ms cubic-bezier(.2,.8,.2,1);
+
+      --font-sans: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      background: var(--bg-deepest);
+      color: var(--color-text);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.45;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      background: none;
+      color: inherit;
+    }
+
+    input, textarea {
+      font-family: inherit;
+      outline: none;
+      border: none;
+      color: inherit;
+    }
+
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #202225;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #2f3136; background-clip: padding-box; }
+
+    /* ============================================================
+       2. ANIMATIONS @keyframes
+       ============================================================ */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeInScale {
+      from { opacity: 0; transform: scale(0.95) translateY(20px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(40px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 0 0 var(--admin-glow); }
+      50%      { box-shadow: 0 0 0 8px rgba(237,66,69,0); }
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50%      { transform: scale(1.25); opacity: 0.6; }
+    }
+
+    @keyframes typingDot {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30%           { transform: translateY(-4px); opacity: 1; }
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes gradientShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* ============================================================
+       3. ÉCRAN D'AUTHENTIFICATION
+       ============================================================ */
+    .auth-screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: linear-gradient(135deg, #1e1f22, #2b2d31, #1e1f22, #313338);
+      background-size: 400% 400%;
+      animation: gradientShift 18s ease infinite;
+      z-index: 10;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 460px;
+      background: var(--bg-channel);
+      border-radius: var(--radius-lg);
+      padding: 36px 32px;
+      box-shadow: var(--shadow-deep);
+      animation: fadeInScale 350ms ease both;
+    }
+
+    .auth-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+    .auth-logo .dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--brand-primary);
+      box-shadow: 0 0 18px var(--brand-primary);
+      animation: pulseDot 1.6s ease-in-out infinite;
+    }
+    .auth-logo h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .auth-subtitle {
+      text-align: center;
+      color: var(--color-text-muted);
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    .auth-tabs {
+      display: flex;
+      background: var(--bg-deepest);
+      border-radius: var(--radius-md);
+      padding: 4px;
+      margin-bottom: 22px;
+    }
+    .auth-tab {
+      flex: 1;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      border-radius: var(--radius-sm);
+      transition: var(--transition-med);
+    }
+    .auth-tab.active {
+      background: var(--brand-primary);
+      color: #fff;
+    }
+    .auth-tab:not(.active):hover { color: var(--color-text); }
+
+    .field {
+      margin-bottom: 14px;
+      animation: fadeIn 250ms ease both;
+    }
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--color-text-muted);
+      margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%;
+      padding: 11px 13px;
+      background: var(--bg-deepest);
+      border-radius: var(--radius-sm);
+      color: var(--color-text);
+      font-size: 14px;
+      border: 1px solid transparent;
+      transition: var(--transition-fast);
+    }
+    .field input:focus {
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 3px rgba(88,101,242,0.25);
+    }
+
+    .field-row { display: flex; gap: 12px; }
+    .field-row .field { flex: 1; }
+
+    /* Champ secret C.A — apparaît avec animation */
+    #ca-field {
+      display: none;
+      border: 1px dashed var(--admin-color);
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+      background: rgba(237, 66, 69, 0.06);
+      animation: fadeIn 300ms ease both, pulseGlow 2.5s ease-in-out infinite;
+    }
+    #ca-field.show { display: block; }
+    #ca-field label { color: var(--admin-color); }
+
+    .auth-submit {
+      width: 100%;
+      padding: 12px;
+      background: var(--brand-primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      border-radius: var(--radius-sm);
+      transition: var(--transition-fast);
+      margin-top: 8px;
+    }
+    .auth-submit:hover  { background: var(--brand-primary-hov); }
+    .auth-submit:active { transform: translateY(1px); }
+    .auth-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .auth-footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--color-text-dim);
+      margin-top: 18px;
+    }
+
+    /* ============================================================
+       4. APPLICATION (Layout 3 colonnes)
+       ============================================================ */
+    .app {
+      display: none;
+      grid-template-columns: 240px 1fr 240px;
+      grid-template-rows: 100vh;
+      height: 100vh;
+      width: 100vw;
+    }
+    .app.active { display: grid; animation: fadeIn 300ms ease both; }
+
+    /* ----- Sidebar (salons) ----- */
+    .sidebar {
+      background: var(--bg-sidebar);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--color-divider);
+    }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--color-divider);
+      font-weight: 700;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-header .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 7px;
+      background: var(--brand-success);
+      border-radius: 10px;
+      color: #fff;
+    }
+    .channels {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 8px;
+    }
+    .channels-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--color-text-dim);
+      padding: 6px 10px 4px;
+    }
+    .channel {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      margin: 2px 0;
+      border-radius: var(--radius-sm);
+      color: var(--color-text-muted);
+      font-weight: 500;
+      transition: var(--transition-fast);
+      cursor: pointer;
+    }
+    .channel:hover { background: var(--bg-hover); color: var(--color-text); }
+    .channel.active { background: var(--bg-active); color: var(--color-text); }
+    .channel .hash { color: var(--color-text-dim); font-weight: 700; }
+
+    .sidebar-footer {
+      padding: 10px;
+      background: #232428;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sidebar-footer .avatar { width: 32px; height: 32px; }
+    .me-info { flex: 1; min-width: 0; }
+    .me-info .me-name {
+      font-weight: 600;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .me-info .me-status {
+      font-size: 11px;
+      color: var(--color-text-dim);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .me-info .me-status::before {
+      content: "";
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--brand-success);
+      animation: pulseDot 2s ease-in-out infinite;
+    }
+    .logout-btn {
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      color: var(--color-text-muted);
+      font-size: 12px;
+      transition: var(--transition-fast);
+    }
+    .logout-btn:hover { background: var(--brand-danger); color: #fff; }
+
+    /* ----- Zone de chat ----- */
+    .chat {
+      background: var(--bg-channel);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .chat-header {
+      height: 48px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--color-divider);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.2);
+    }
+    .chat-header .hash { color: var(--color-text-dim); font-weight: 700; font-size: 18px; }
+    .chat-header .title { font-weight: 700; }
+    .chat-header .topic {
+      color: var(--color-text-dim);
+      font-size: 13px;
+      padding-left: 12px;
+      margin-left: 12px;
+      border-left: 1px solid var(--color-divider);
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .message {
+      display: flex;
+      gap: 14px;
+      animation: fadeIn 220ms ease both;
+    }
+    .avatar {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #5865f2, #404eed);
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
+      box-shadow: var(--shadow-soft);
+    }
+    .avatar.admin {
+      background: linear-gradient(135deg, #ed4245, #b32629);
+      box-shadow: 0 0 0 2px rgba(237,66,69,0.4);
+      animation: pulseGlow 3s ease-in-out infinite;
+    }
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-head {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+    .msg-author { font-weight: 700; font-size: 15px; }
+    .msg-author.admin { color: var(--admin-color); }
+    .badge-admin {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--admin-color);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .msg-time { font-size: 11px; color: var(--color-text-dim); }
+    .msg-text {
+      color: var(--color-text);
+      font-size: 14.5px;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    .typing-indicator {
+      height: 22px;
+      padding: 0 18px 4px;
+      font-size: 12px;
+      color: var(--color-text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .typing-dots { display: inline-flex; gap: 3px; }
+    .typing-dots span {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--color-text-dim);
+      animation: typingDot 1.2s infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+    .composer {
+      padding: 0 18px 22px;
+    }
+    .composer-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-input);
+      border-radius: var(--radius-md);
+      padding: 6px 10px;
+      transition: var(--transition-fast);
+    }
+    .composer-box:focus-within {
+      box-shadow: 0 0 0 2px var(--brand-primary);
+    }
+    .composer-box input {
+      flex: 1;
+      background: transparent;
+      padding: 11px 6px;
+      font-size: 14.5px;
+    }
+    .composer-box button.send {
+      padding: 8px 14px;
+      background: var(--brand-primary);
+      color: #fff;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 13px;
+      transition: var(--transition-fast);
+    }
+    .composer-box button.send:hover { background: var(--brand-primary-hov); }
+    .composer-box button.send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ----- Liste des membres ----- */
+    .members {
+      background: var(--bg-members);
+      border-left: 1px solid var(--color-divider);
+      display: flex;
+      flex-direction: column;
+    }
+    .members-header {
+      padding: 14px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--color-text-dim);
+      border-bottom: 1px solid var(--color-divider);
+    }
+    .members-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .members-section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--color-text-dim);
+      padding: 10px 8px 4px;
+    }
+    .member {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      transition: var(--transition-fast);
+      animation: slideInRight 220ms ease both;
+    }
+    .member:hover { background: var(--bg-hover); }
+    .member .mini-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #5865f2, #404eed);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
+    }
+    .member .mini-avatar.admin {
+      background: linear-gradient(135deg, #ed4245, #b32629);
+    }
+    .member .name {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .member .name.admin { color: var(--admin-color); font-weight: 700; }
+
+    /* ============================================================
+       5. NOTIFICATIONS TOAST
+       ============================================================ */
+    .toast-container {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      min-width: 260px;
+      max-width: 360px;
+      padding: 12px 16px;
+      background: var(--bg-channel);
+      border-left: 4px solid var(--brand-primary);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-deep);
+      color: var(--color-text);
+      font-size: 13px;
+      animation: slideInRight 280ms ease both;
+    }
+    .toast.success { border-left-color: var(--brand-success); }
+    .toast.error   { border-left-color: var(--brand-danger); animation: slideInRight 280ms ease both, shake 320ms ease 280ms; }
+    .toast.warn    { border-left-color: var(--brand-warning); }
+    .toast .t-title { font-weight: 700; margin-bottom: 2px; }
+    .toast .t-msg   { color: var(--color-text-muted); }
+
+    /* ============================================================
+       6. ÉCRAN DE CHARGEMENT
+       ============================================================ */
+    .loader-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(30, 31, 34, 0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 8000;
+    }
+    .loader-overlay.show { display: flex; }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(88,101,242,0.25);
+      border-top-color: var(--brand-primary);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    /* ============================================================
+       7. RESPONSIVE
+       ============================================================ */
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 200px 1fr; }
+      .members { display: none; }
+    }
+    @media (max-width: 600px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .auth-card { padding: 28px 22px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- =================================================================
+       ÉCRAN D'AUTHENTIFICATION
+       ================================================================= -->
+  <section id="auth" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <span class="dot"></span>
+        <h1>AnonChat</h1>
+      </div>
+      <p class="auth-subtitle">Messagerie temps réel — propulsée par Socket.io</p>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Connexion</button>
+        <button class="auth-tab" data-tab="register">Inscription</button>
+      </div>
+
+      <!-- Formulaire CONNEXION -->
+      <form id="form-login" class="auth-form">
+        <div class="field">
+          <label for="login-pseudo">Pseudo</label>
+          <input id="login-pseudo" type="text" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="login-password">Mot de passe</label>
+          <input id="login-password" type="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="auth-submit">Se connecter</button>
+      </form>
+
+      <!-- Formulaire INSCRIPTION -->
+      <form id="form-register" class="auth-form" style="display:none">
+        <div class="field-row">
+          <div class="field">
+            <label for="reg-prenom">Prénom</label>
+            <input id="reg-prenom" type="text" required />
+          </div>
+          <div class="field">
+            <label for="reg-nom">Nom</label>
+            <input id="reg-nom" type="text" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="reg-email">Email</label>
+          <input id="reg-email" type="email" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="reg-pseudo">Pseudo</label>
+          <input id="reg-pseudo" type="text" placeholder="Ex: NightOwl" required />
+        </div>
+        <div class="field" id="ca-field">
+          <label for="reg-ca">C.A (Code d'Accès)</label>
+          <input id="reg-ca" type="password" autocomplete="off" placeholder="••••" />
+        </div>
+        <div class="field">
+          <label for="reg-password">Mot de passe</label>
+          <input id="reg-password" type="password" autocomplete="new-password" required />
+        </div>
+        <button type="submit" class="auth-submit">Créer mon compte</button>
+      </form>
+
+      <p class="auth-footer">© 2025 AnonChat — Hébergé sur Render</p>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       APPLICATION (3 colonnes)
+       ================================================================= -->
+  <main id="app" class="app">
+
+    <!-- Sidebar : salons -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>AnonChat</span>
+        <span class="badge">LIVE</span>
+      </div>
+
+      <div class="channels">
+        <div class="channels-title">Salons textuels</div>
+        <div class="channel active" data-salon="general">
+          <span class="hash">#</span><span>general</span>
+        </div>
+        <div class="channel" data-salon="aide">
+          <span class="hash">#</span><span>aide</span>
+        </div>
+        <div class="channel" data-salon="annonces">
+          <span class="hash">#</span><span>annonces</span>
+        </div>
+        <div class="channel" data-salon="off-topic">
+          <span class="hash">#</span><span>off-topic</span>
+        </div>
+        <div class="channel" data-salon="dev">
+          <span class="hash">#</span><span>dev</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div id="me-avatar" class="avatar">?</div>
+        <div class="me-info">
+          <div id="me-name" class="me-name">—</div>
+          <div class="me-status">en ligne</div>
+        </div>
+        <button id="logout-btn" class="logout-btn" title="Se déconnecter">⏻</button>
+      </div>
+    </aside>
+
+    <!-- Chat -->
+    <section class="chat">
+      <div class="chat-header">
+        <span class="hash">#</span>
+        <span class="title" id="current-channel">general</span>
+        <span class="topic">Bienvenue dans le salon principal d'AnonChat.</span>
+      </div>
+
+      <div id="messages" class="messages"></div>
+
+      <div id="typing" class="typing-indicator" style="visibility:hidden">
+        <span id="typing-text">Quelqu'un écrit</span>
+        <span class="typing-dots"><span></span><span></span><span></span></span>
+      </div>
+
+      <div class="composer">
+        <div class="composer-box">
+          <input id="msg-input" type="text" placeholder="Envoyer un message dans #general" maxlength="2000" />
+          <button id="send-btn" class="send" disabled>Envoyer</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Membres -->
+    <aside class="members">
+      <div class="members-header">Membres connectés — <span id="members-count">0</span></div>
+      <div id="members-list" class="members-list"></div>
+    </aside>
+  </main>
+
+  <!-- Notifications -->
+  <div id="toasts" class="toast-container"></div>
+
+  <!-- Overlay de chargement -->
+  <div id="loader" class="loader-overlay"><div class="spinner"></div></div>
+
+  <!-- =================================================================
+       SCRIPTS — Socket.io + logique client
+       ================================================================= -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  /* =================================================================
+   *  AnonChat - Client JS
+   *  -----------------------------------------------------------------
+   *  Logique :
+   *    - Auth (login / register) via fetch -> /api/login & /api/register
+   *    - Protocole Admin Invisible (champ C.A dynamique)
+   *    - Connexion Socket.io et gestion des évènements
+   *    - Affichage messages, salons, membres, typing, toasts
+   * ================================================================= */
+
+  (function () {
+    "use strict";
+
+    /* -------- État global ------------------------------------------- */
+    const state = {
+      user: null,         // { pseudo, role, prenom }
+      socket: null,
+      currentSalon: 'general',
+      typingTimeout: null
+    };
+
+    /* -------- Helpers DOM ------------------------------------------ */
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+    /**
+     * Affiche un toast stylisé (success / error / warn / info).
+     * Auto-disparition après `duration` ms.
+     */
+    function toast(type, title, message, duration = 3800) {
+      const wrap = $('#toasts');
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.innerHTML = `<div class="t-title">${escapeHtml(title)}</div><div class="t-msg">${escapeHtml(message)}</div>`;
+      wrap.appendChild(el);
+      setTimeout(() => {
+        el.style.transition = 'opacity 250ms ease, transform 250ms ease';
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(40px)';
+        setTimeout(() => el.remove(), 280);
+      }, duration);
+    }
+
+    function showLoader(show) {
+      $('#loader').classList.toggle('show', !!show);
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function formatTime(date) {
+      const d = new Date(date);
+      const now = new Date();
+      const sameDay =
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      if (sameDay) return `Aujourd'hui à ${hh}:${mm}`;
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}/${mo} ${hh}:${mm}`;
+    }
+
+    function initials(pseudo) {
+      if (!pseudo) return '?';
+      const parts = pseudo.replace(/^Admin_/i, '').split(/[\s_\-]+/).filter(Boolean);
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return pseudo.slice(0, 2).toUpperCase();
+    }
+
+    /* -------- Onglets Auth ----------------------------------------- */
+    $$('.auth-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        $$('.auth-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const which = tab.dataset.tab;
+        $('#form-login').style.display    = which === 'login'    ? '' : 'none';
+        $('#form-register').style.display = which === 'register' ? '' : 'none';
+      });
+    });
+
+    /* -------- Protocole Admin Invisible ---------------------------- */
+    const pseudoInput = $('#reg-pseudo');
+    const caField = $('#ca-field');
+    pseudoInput.addEventListener('input', () => {
+      const v = pseudoInput.value.trim();
+      if (v === '/admin') {
+        caField.classList.add('show');
+        toast('warn', 'Mode Admin détecté', 'Veuillez saisir le code C.A pour valider.');
+      } else {
+        caField.classList.remove('show');
+      }
+    });
+
+    /* -------- Inscription ------------------------------------------ */
+    $('#form-register').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        prenom:   $('#reg-prenom').value.trim(),
+        nom:      $('#reg-nom').value.trim(),
+        email:    $('#reg-email').value.trim(),
+        pseudo:   $('#reg-pseudo').value.trim(),
+        password: $('#reg-password').value,
+        ca:       $('#reg-ca').value
+      };
+
+      if (!payload.prenom || !payload.nom || !payload.email || !payload.pseudo || !payload.password) {
+        toast('error', 'Champs manquants', 'Tous les champs sont obligatoires.');
+        return;
+      }
+
+      try {
+        showLoader(true);
+        const r = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        showLoader(false);
+
+        if (!data.ok) {
+          toast('error', 'Inscription refusée', data.error || 'Erreur inconnue.');
+          return;
+        }
+        toast('success', 'Compte créé', `Bienvenue ${data.user.pseudo} !`);
+
+        // Auto-login
+        const lr = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pseudo: data.user.pseudo, password: payload.password })
+        });
+        const ldata = await lr.json();
+        if (ldata.ok) startApp(ldata.user, ldata.history);
+      } catch (err) {
+        showLoader(false);
+        toast('error', 'Réseau', 'Impossible de joindre le serveur.');
+      }
+    });
+
+    /* -------- Connexion -------------------------------------------- */
+    $('#form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        pseudo:   $('#login-pseudo').value.trim(),
+        password: $('#login-password').value
+      };
+      try {
+        showLoader(true);
+        const r = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        showLoader(false);
+        if (!data.ok) {
+          toast('error', 'Connexion refusée', data.error || 'Identifiants incorrects.');
+          return;
+        }
+        toast('success', 'Connecté', `Bonjour ${data.user.pseudo} !`);
+        startApp(data.user, data.history);
+      } catch (err) {
+        showLoader(false);
+        toast('error', 'Réseau', 'Impossible de joindre le serveur.');
+      }
+    });
+
+    /* -------- Démarrage de l'app après auth ------------------------ */
+    function startApp(user, history) {
+      state.user = user;
+      $('#auth').style.display = 'none';
+      $('#app').classList.add('active');
+
+      // Header utilisateur
+      $('#me-name').textContent = user.pseudo;
+      const meAv = $('#me-avatar');
+      meAv.textContent = initials(user.pseudo);
+      meAv.classList.toggle('admin', user.role === 'admin');
+
+      // Connexion socket
+      state.socket = io();
+      state.socket.emit('user:join', {
+        pseudo: user.pseudo,
+        role:   user.role,
+        salon:  state.currentSalon
+      });
+
+      // Évènements socket
+      state.socket.on('message:new',    (m) => appendMessage(m));
+      state.socket.on('history:load',   (msgs) => loadHistory(msgs));
+      state.socket.on('members:update', (members) => renderMembers(members));
+      state.socket.on('typing',         ({ pseudo, isTyping }) => showTyping(pseudo, isTyping));
+      state.socket.on('error:notify',   ({ message }) => toast('error', 'Erreur', message));
+
+      // Charge historique initial
+      loadHistory(history || []);
+    }
+
+    /* -------- Salons (changement) ---------------------------------- */
+    $$('.channel').forEach(c => {
+      c.addEventListener('click', () => {
+        $$('.channel').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+        const salon = c.dataset.salon;
+        state.currentSalon = salon;
+        $('#current-channel').textContent = salon;
+        $('#msg-input').placeholder = `Envoyer un message dans #${salon}`;
+        $('#messages').innerHTML = '';
+        if (state.socket) state.socket.emit('salon:change', { salon });
+      });
+    });
+
+    /* -------- Composer --------------------------------------------- */
+    const input = $('#msg-input');
+    const sendBtn = $('#send-btn');
+
+    input.addEventListener('input', () => {
+      sendBtn.disabled = input.value.trim().length === 0;
+      if (state.socket) {
+        state.socket.emit('typing', true);
+        clearTimeout(state.typingTimeout);
+        state.typingTimeout = setTimeout(() => state.socket.emit('typing', false), 1500);
+      }
+    });
+
+    function sendMessage() {
+      const txt = input.value.trim();
+      if (!txt || !state.socket) return;
+      state.socket.emit('message:send', { texte: txt });
+      input.value = '';
+      sendBtn.disabled = true;
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    /* -------- Affichage messages ----------------------------------- */
+    function appendMessage(m) {
+      const list = $('#messages');
+      const isAdmin = m.role === 'admin';
+      const el = document.createElement('div');
+      el.className = 'message';
+      el.innerHTML = `
+        <div class="avatar ${isAdmin ? 'admin' : ''}">${escapeHtml(initials(m.auteur))}</div>
+        <div class="msg-body">
+          <div class="msg-head">
+            <span class="msg-author ${isAdmin ? 'admin' : ''}">${escapeHtml(m.auteur)}</span>
+            ${isAdmin ? '<span class="badge-admin">★ ADMIN</span>' : ''}
+            <span class="msg-time">${formatTime(m.date)}</span>
+          </div>
+          <div class="msg-text">${escapeHtml(m.texte)}</div>
+        </div>
+      `;
+      list.appendChild(el);
+      list.scrollTop = list.scrollHeight;
+    }
+
+    function loadHistory(messages) {
+      $('#messages').innerHTML = '';
+      (messages || []).forEach(appendMessage);
+    }
+
+    /* -------- Membres ---------------------------------------------- */
+    function renderMembers(members) {
+      const list = $('#members-list');
+      $('#members-count').textContent = members.length;
+
+      // Filtre par salon courant
+      const here = members.filter(m => m.salon === state.currentSalon);
+      const admins = here.filter(m => m.role === 'admin');
+      const users  = here.filter(m => m.role !== 'admin');
+
+      list.innerHTML = '';
+
+      if (admins.length) {
+        const h = document.createElement('div');
+        h.className = 'members-section-title';
+        h.textContent = `Admins — ${admins.length}`;
+        list.appendChild(h);
+        admins.forEach(u => list.appendChild(renderMember(u)));
+      }
+      if (users.length) {
+        const h = document.createElement('div');
+        h.className = 'members-section-title';
+        h.textContent = `Membres — ${users.length}`;
+        list.appendChild(h);
+        users.forEach(u => list.appendChild(renderMember(u)));
+      }
+    }
+
+    function renderMember(u) {
+      const isAdmin = u.role === 'admin';
+      const el = document.createElement('div');
+      el.className = 'member';
+      el.innerHTML = `
+        <div class="mini-avatar ${isAdmin ? 'admin' : ''}">${escapeHtml(initials(u.pseudo))}</div>
+        <div class="name ${isAdmin ? 'admin' : ''}">${escapeHtml(u.pseudo)}</div>
+      `;
+      return el;
+    }
+
+    /* -------- Typing indicator ------------------------------------- */
+    let typingUsers = new Set();
+    function showTyping(pseudo, isTyping) {
+      if (isTyping) typingUsers.add(pseudo);
+      else typingUsers.delete(pseudo);
+
+      const wrap = $('#typing');
+      const txt = $('#typing-text');
+      if (typingUsers.size === 0) {
+        wrap.style.visibility = 'hidden';
+        return;
+      }
+      const arr = Array.from(typingUsers);
+      let label;
+      if (arr.length === 1) label = `${arr[0]} écrit`;
+      else if (arr.length === 2) label = `${arr[0]} et ${arr[1]} écrivent`;
+      else label = `Plusieurs personnes écrivent`;
+      txt.textContent = label;
+      wrap.style.visibility = 'visible';
+    }
+
+    /* -------- Logout ------------------------------------------------ */
+    $('#logout-btn').addEventListener('click', () => {
+      if (state.socket) state.socket.disconnect();
+      state.user = null;
+      state.socket = null;
+      $('#app').classList.remove('active');
+      $('#auth').style.display = 'flex';
+      $('#messages').innerHTML = '';
+      $('#members-list').innerHTML = '';
+      toast('success', 'Déconnecté', 'À bientôt sur AnonChat !');
+    });
+
+  })();
+  </script>
+</body>
+</html>
